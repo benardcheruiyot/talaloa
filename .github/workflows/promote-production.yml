@@ -9,11 +9,11 @@ on:
 
 jobs:
   promote:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'master') }}
     runs-on: ubuntu-latest
     steps:
       - name: Trigger production deployment
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run deploy-production.yml --ref main
+          gh workflow run deploy-production.yml --ref "${{ github.event.workflow_run.head_branch }}"

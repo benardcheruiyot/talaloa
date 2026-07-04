@@ -14,10 +14,45 @@ const api = axios.create({
   },
 });
 
+const AUTH_EXPIRED_EVENT = 'auth:expired';
+
+const parseJwtPayload = (token) => {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '='));
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+};
+
+const isTokenExpired = (token) => {
+  const payload = parseJwtPayload(token);
+  if (!payload || !payload.exp) {
+    return true;
+  }
+
+  // Add a short buffer to avoid race conditions near expiry boundary.
+  return Date.now() >= (payload.exp * 1000) - 5000;
+};
+
+const clearAuthAndNotify = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+};
+
 // Add token to requests
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
+    if (isTokenExpired(token)) {
+      clearAuthAndNotify();
+      return config;
+    }
+
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -27,9 +62,16 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    const status = error.response?.status;
     const message = error.response?.data?.error?.message || error.response?.data?.message || error.message;
+
+    if (status === 401) {
+      clearAuthAndNotify();
+      return Promise.reject(new Error('Session expired. Please login again.'));
+    }
+
     console.error('API Error:', { 
-      status: error.response?.status, 
+      status, 
       data: error.response?.data,
       message 
     });

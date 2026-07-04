@@ -68,6 +68,13 @@ jobs:
           printf '%s' "${{ secrets.BACKEND_ENV_FILE }}" > backend/.env
           printf '%s' "${{ secrets.FRONTEND_ENV_FILE }}" > frontend/.env
 
+          echo "Prepared backend/.env sha256:"
+          sha256sum backend/.env
+          echo "Prepared backend/.env M-Pesa keys present:"
+          grep -E '^(MPESA_CONSUMER_KEY|MPESA_CONSUMER_SECRET|MPESA_SHORTCODE|MPESA_PARTYB|MPESA_PASSKEY|MPESA_ENVIRONMENT|MPESA_CALLBACK_URL)=' backend/.env \
+            | cut -d= -f1 \
+            | sort
+
       - name: Run full remote recovery deployment
         shell: bash
         env:

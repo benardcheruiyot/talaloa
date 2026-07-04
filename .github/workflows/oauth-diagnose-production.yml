@@ -36,7 +36,7 @@ jobs:
               BACKEND_DIR="$APP_ROOT/backend"
             fi
             if [ -z "$BACKEND_DIR" ] || [ ! -f "$BACKEND_DIR/.env" ]; then
-              PM2_CWD="$(pm2 describe "$APP_NAME" 2>/dev/null | awk -F': ' '/^[[:space:]]*cwd/ {print $2; exit}')"
+              PM2_CWD="$(pm2 jlist 2>/dev/null | node -e 'const fs=require("fs");const name=process.argv[1];let items=[];try{items=JSON.parse(fs.readFileSync(0,"utf8"));}catch{};const proc=items.find((item)=>item.name===name);console.log((proc&&proc.pm2_env&&(proc.pm2_env.pm_cwd||proc.pm2_env.cwd))||"")' "$APP_NAME")"
               if [ -n "$PM2_CWD" ]; then
                 BACKEND_DIR="$PM2_CWD"
               fi

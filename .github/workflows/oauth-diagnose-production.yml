@@ -1,0 +1,153 @@
+name: Diagnose Production OAuth
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+
+    env:
+      PM2_APP_NAME: ${{ vars.PM2_APP_NAME }}
+      APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      BACKEND_PORT: ${{ vars.BACKEND_PORT }}
+
+    steps:
+      - name: Run VPS diagnostics
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            set +e
+
+            APP_NAME="${PM2_APP_NAME:-backend}"
+            APP_ROOT="${DEPLOY_PATH:-}"
+            BACKEND_DIR=""
+            if [ -n "$APP_ROOT" ]; then
+              BACKEND_DIR="$APP_ROOT/backend"
+            fi
+            DOMAIN="${APP_DOMAIN:-}"
+            PORT="${BACKEND_PORT:-5005}"
+
+            echo "===== BASIC ====="
+            date
+            hostname
+            whoami
+            uname -a
+
+            echo "===== PM2 ====="
+            pm2 status || true
+            pm2 logs "$APP_NAME" --lines 80 --nostream || true
+
+            echo "===== BACKEND PORT / HEALTH ====="
+            ss -ltnp | grep -E ":80|:443|:${PORT}" || true
+            curl -i -m 10 "http://127.0.0.1:${PORT}/api/health" || true
+
+            echo "===== BACKEND ENV HASH ====="
+            if [ -n "$BACKEND_DIR" ] && [ -f "$BACKEND_DIR/.env" ]; then
+              sha256sum "$BACKEND_DIR/.env" || true
+              grep -E '^(NODE_ENV|PORT|MPESA_ENVIRONMENT|MPESA_SHORTCODE|MPESA_PARTYB|MPESA_TRANSACTION_TYPE|MPESA_CALLBACK_URL)=' "$BACKEND_DIR/.env" || true
+            else
+              echo "backend/.env not found"
+            fi
+
+            echo "===== M-PESA OAUTH TEST ====="
+            if [ -n "$BACKEND_DIR" ] && [ -f "$BACKEND_DIR/.env" ]; then
+              cd "$BACKEND_DIR"
+              node - <<'NODE'
+const fs = require('fs');
+const https = require('https');
+
+const env = fs.readFileSync('.env', 'utf8')
+  .split(/\r?\n/)
+  .reduce((acc, line) => {
+    if (!line || line.startsWith('#')) return acc;
+    const index = line.indexOf('=');
+    if (index < 0) return acc;
+    const key = line.slice(0, index).trim();
+    const value = line.slice(index + 1).trim();
+    acc[key] = value;
+    return acc;
+  }, {});
+
+const consumerKey = env.MPESA_CONSUMER_KEY || '';
+const consumerSecret = env.MPESA_CONSUMER_SECRET || '';
+const environment = env.MPESA_ENVIRONMENT || '';
+
+if (!consumerKey || !consumerSecret) {
+  console.log(JSON.stringify({ ok: false, reason: 'missing_credentials', environment, hasKey: Boolean(consumerKey), hasSecret: Boolean(consumerSecret) }, null, 2));
+  process.exit(0);
+}
+
+const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+
+const request = https.request(
+  'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials',
+  {
+    method: 'GET',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      Accept: 'application/json',
+    },
+  },
+  (response) => {
+    let raw = '';
+
+    response.on('data', (chunk) => {
+      raw += chunk;
+    });
+
+    response.on('end', () => {
+      let data = raw;
+
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        data = raw;
+      }
+
+      console.log(JSON.stringify({
+        ok: response.statusCode === 200,
+        status: response.statusCode,
+        environment,
+        hasAccessToken: Boolean(data.access_token),
+        expiresIn: data.expires_in || null,
+        errorCode: data.errorCode || null,
+        errorMessage: data.errorMessage || data.ResponseDescription || null,
+      }, null, 2));
+    });
+  }
+);
+
+request.on('error', (error) => {
+  console.log(JSON.stringify({ ok: false, networkError: error.message, environment }, null, 2));
+});
+
+request.end();
+NODE
+            fi
+
+            echo "===== NGINX STATUS ====="
+            sudo -n nginx -t || echo "sudo nginx -t failed (needs sudo privileges)"
+            sudo -n systemctl status nginx --no-pager -l || true
+
+            echo "===== DOMAIN PROBES FROM VPS ====="
+            if [ -n "$DOMAIN" ]; then
+              curl -I -m 10 "http://$DOMAIN" || true
+              curl -k -I -m 10 "https://$DOMAIN" || true
+            else
+              echo "APP_DOMAIN not set; skipping public domain probes"
+            fi
+
+            echo "===== TLS CERT SUBJECT ====="
+            if [ -n "$DOMAIN" ]; then
+              echo | openssl s_client -servername "$DOMAIN" -connect "$DOMAIN":443 2>/dev/null | openssl x509 -noout -subject -issuer -dates || true
+            else
+              echo "APP_DOMAIN not set; skipping TLS cert check"
+            fi

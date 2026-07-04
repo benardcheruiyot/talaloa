@@ -55,7 +55,7 @@ const readPendingLoanApplication = () => {
 
 const Loan = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const paymentPollRef = useRef(null);
   const isMountedRef = useRef(true);
   const autoRetryUsedRef = useRef(false);
@@ -186,6 +186,15 @@ const Loan = () => {
     : [{ phone: '0712****34', amount: '13,200', time: '9 mins ago' }];
 
   const hasSelectedLoan = Boolean(selectedLoan);
+
+  const isAuthTokenError = (message) => {
+    const normalized = String(message || '').toLowerCase();
+    return (
+      normalized.includes('invalid or expired token') ||
+      normalized.includes('session expired') ||
+      normalized.includes('no token provided')
+    );
+  };
 
   useEffect(() => {
     if (!user?.phone_number) {
@@ -507,6 +516,19 @@ const Loan = () => {
       // Start almost immediately, then continue with sequential polling.
       scheduleNextPoll(150);
     } catch (error) {
+      if (isAuthTokenError(error?.message)) {
+        logout();
+        await Swal.fire({
+          icon: 'warning',
+          title: 'Session Expired',
+          text: 'Please log in again to continue with payment.',
+          confirmButtonColor: '#26c2a3',
+        });
+        navigate('/eligibility', { replace: true });
+        if (isMountedRef.current) setLoading(false);
+        return;
+      }
+
       Swal.fire({
         icon: 'error',
         title: 'Payment Prompt Failed',

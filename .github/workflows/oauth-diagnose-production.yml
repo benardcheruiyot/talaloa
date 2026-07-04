@@ -35,6 +35,12 @@ jobs:
             if [ -n "$APP_ROOT" ]; then
               BACKEND_DIR="$APP_ROOT/backend"
             fi
+            if [ -z "$BACKEND_DIR" ] || [ ! -f "$BACKEND_DIR/.env" ]; then
+              PM2_CWD="$(pm2 describe "$APP_NAME" 2>/dev/null | awk -F': ' '/^[[:space:]]*cwd/ {print $2; exit}')"
+              if [ -n "$PM2_CWD" ]; then
+                BACKEND_DIR="$PM2_CWD"
+              fi
+            fi
             DOMAIN="${APP_DOMAIN:-}"
             PORT="${BACKEND_PORT:-5005}"
 

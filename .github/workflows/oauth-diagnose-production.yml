@@ -43,6 +43,24 @@ jobs:
             fi
             DOMAIN="${APP_DOMAIN:-}"
             PORT="${BACKEND_PORT:-5005}"
+            LISTENING_PID="$(ss -ltnp 2>/dev/null | awk -v port=":${PORT}" '$4 ~ port { if (match($0, /pid=([0-9]+)/, m)) { print m[1]; exit } }')"
+
+            if [ -n "$LISTENING_PID" ]; then
+              DISCOVERED_APP="$(pm2 jlist 2>/dev/null | node -e 'const fs=require("fs");const pid=Number(process.argv[1]);let items=[];try{items=JSON.parse(fs.readFileSync(0,"utf8"));}catch{};const proc=items.find((item)=>Number(item.pid)===pid);console.log((proc&&proc.name)||"")' "$LISTENING_PID")"
+              DISCOVERED_CWD="$(pm2 jlist 2>/dev/null | node -e 'const fs=require("fs");const pid=Number(process.argv[1]);let items=[];try{items=JSON.parse(fs.readFileSync(0,"utf8"));}catch{};const proc=items.find((item)=>Number(item.pid)===pid);console.log((proc&&proc.pm2_env&&(proc.pm2_env.pm_cwd||proc.pm2_env.cwd))||"")' "$LISTENING_PID")"
+
+              if [ -n "$DISCOVERED_APP" ]; then
+                APP_NAME="$DISCOVERED_APP"
+              fi
+
+              if [ -n "$DISCOVERED_CWD" ]; then
+                BACKEND_DIR="$DISCOVERED_CWD"
+              fi
+            fi
+
+            if [ -n "$BACKEND_DIR" ] && [ ! -f "$BACKEND_DIR/.env" ] && [ -f "$BACKEND_DIR/backend/.env" ]; then
+              BACKEND_DIR="$BACKEND_DIR/backend"
+            fi
 
             echo "===== BASIC ====="
             date

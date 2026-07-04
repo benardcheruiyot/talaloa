@@ -13,7 +13,6 @@ class MpesaService {
     this.businessCode = String(this.shortcode || this.partyB).trim();
     this.passkey = String(process.env.MPESA_PASSKEY || '').trim();
     this.transactionType = String(process.env.MPESA_TRANSACTION_TYPE || 'CustomerPayBillOnline').trim();
-    this.runtimeTransactionType = this.transactionType;
     this.httpsAgent = new https.Agent({ family: 4, keepAlive: false });
     this.cachedAccessToken = null;
     this.cachedAccessTokenExpiresAt = 0;
@@ -59,11 +58,7 @@ class MpesaService {
     this.consumerSecret = latestConsumerSecret || this.consumerSecret;
     this.environment = latestEnvironment || this.environment;
 
-    const previousConfiguredType = this.transactionType;
     this.transactionType = latestTransactionType;
-    if (!this.runtimeTransactionType || this.runtimeTransactionType === previousConfiguredType) {
-      this.runtimeTransactionType = latestTransactionType;
-    }
 
     this.resolvedPartyB = this.resolvePartyB();
   }
@@ -88,7 +83,7 @@ class MpesaService {
   }
 
   getActiveTransactionType() {
-    return this.runtimeTransactionType || this.transactionType;
+    return this.transactionType;
   }
 
   isAgentStoreMismatchDescription(text) {
@@ -490,13 +485,9 @@ class MpesaService {
       const mismatchDetected = !isSuccess && this.isAgentStoreMismatchDescription(response.ResultDesc);
 
       if (mismatchDetected) {
-        const nextTransactionType = this.getAlternateTransactionType(this.getActiveTransactionType());
-        if (nextTransactionType !== this.runtimeTransactionType) {
-          this.runtimeTransactionType = nextTransactionType;
-          console.warn(
-            `[M-Pesa] Detected Agent/Store mismatch. Switching runtime transaction type to ${this.runtimeTransactionType} for subsequent STK attempts.`
-          );
-        }
+        console.warn(
+          '[M-Pesa] Detected Agent/Store mismatch. Keeping configured MPESA_TRANSACTION_TYPE unchanged.'
+        );
       }
 
       let normalizedStatus = 'failed';

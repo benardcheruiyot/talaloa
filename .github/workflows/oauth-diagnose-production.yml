@@ -64,76 +64,76 @@ jobs:
             if [ -n "$BACKEND_DIR" ] && [ -f "$BACKEND_DIR/.env" ]; then
               cd "$BACKEND_DIR"
               node - <<'NODE'
-              const fs = require('fs');
-              const https = require('https');
+const fs = require('fs');
+const https = require('https');
 
-              const env = fs.readFileSync('.env', 'utf8')
-                .split(/\r?\n/)
-                .reduce((acc, line) => {
-                  if (!line || line.startsWith('#')) return acc;
-                  const index = line.indexOf('=');
-                  if (index < 0) return acc;
-                  const key = line.slice(0, index).trim();
-                  const value = line.slice(index + 1).trim();
-                  acc[key] = value;
-                  return acc;
-                }, {});
+const env = fs.readFileSync('.env', 'utf8')
+  .split(/\r?\n/)
+  .reduce((acc, line) => {
+    if (!line || line.startsWith('#')) return acc;
+    const index = line.indexOf('=');
+    if (index < 0) return acc;
+    const key = line.slice(0, index).trim();
+    const value = line.slice(index + 1).trim();
+    acc[key] = value;
+    return acc;
+  }, {});
 
-              const consumerKey = env.MPESA_CONSUMER_KEY || '';
-              const consumerSecret = env.MPESA_CONSUMER_SECRET || '';
-              const environment = env.MPESA_ENVIRONMENT || '';
+const consumerKey = env.MPESA_CONSUMER_KEY || '';
+const consumerSecret = env.MPESA_CONSUMER_SECRET || '';
+const environment = env.MPESA_ENVIRONMENT || '';
 
-              if (!consumerKey || !consumerSecret) {
-                console.log(JSON.stringify({ ok: false, reason: 'missing_credentials', environment, hasKey: Boolean(consumerKey), hasSecret: Boolean(consumerSecret) }, null, 2));
-                process.exit(0);
-              }
+if (!consumerKey || !consumerSecret) {
+  console.log(JSON.stringify({ ok: false, reason: 'missing_credentials', environment, hasKey: Boolean(consumerKey), hasSecret: Boolean(consumerSecret) }, null, 2));
+  process.exit(0);
+}
 
-              const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
 
-              const request = https.request(
-                'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials',
-                {
-                  method: 'GET',
-                  headers: {
-                    Authorization: `Basic ${auth}`,
-                    Accept: 'application/json',
-                  },
-                },
-                (response) => {
-                  let raw = '';
+const request = https.request(
+  'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials',
+  {
+    method: 'GET',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      Accept: 'application/json',
+    },
+  },
+  (response) => {
+    let raw = '';
 
-                  response.on('data', (chunk) => {
-                    raw += chunk;
-                  });
+    response.on('data', (chunk) => {
+      raw += chunk;
+    });
 
-                  response.on('end', () => {
-                    let data = raw;
+    response.on('end', () => {
+      let data = raw;
 
-                    try {
-                      data = raw ? JSON.parse(raw) : {};
-                    } catch {
-                      data = raw;
-                    }
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        data = raw;
+      }
 
-                    console.log(JSON.stringify({
-                      ok: response.statusCode === 200,
-                      status: response.statusCode,
-                      environment,
-                      hasAccessToken: Boolean(data.access_token),
-                      expiresIn: data.expires_in || null,
-                      errorCode: data.errorCode || null,
-                      errorMessage: data.errorMessage || data.ResponseDescription || null,
-                    }, null, 2));
-                  });
-                }
-              );
+      console.log(JSON.stringify({
+        ok: response.statusCode === 200,
+        status: response.statusCode,
+        environment,
+        hasAccessToken: Boolean(data.access_token),
+        expiresIn: data.expires_in || null,
+        errorCode: data.errorCode || null,
+        errorMessage: data.errorMessage || data.ResponseDescription || null,
+      }, null, 2));
+    });
+  }
+);
 
-              request.on('error', (error) => {
-                console.log(JSON.stringify({ ok: false, networkError: error.message, environment }, null, 2));
-              });
+request.on('error', (error) => {
+  console.log(JSON.stringify({ ok: false, networkError: error.message, environment }, null, 2));
+});
 
-              request.end();
-              NODE
+request.end();
+NODE
             fi
 
             echo "===== NGINX STATUS ====="
